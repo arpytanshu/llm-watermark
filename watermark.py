@@ -7,7 +7,8 @@ class WaterMarkingConfig:
     def __init__(self, 
                  vocab_size: int, 
                  gamma: float = 0.5, 
-                 hardness: float = 1.5, 
+                 hardness: float = 1.5,
+                 hash_fn: Callable = hash,
                  device: torch.device = torch.device('cpu'), 
                  soft_mode: bool = True):
         self.vocab_size = vocab_size
@@ -15,6 +16,7 @@ class WaterMarkingConfig:
         self.hardness = hardness # delta
         self.soft_mode = soft_mode
         self.device = device
+        self.hash_fn = hash_fn
 
         # Calculate G and R list sizes
         self.G_list_size = int(self.vocab_size * self.gamma)

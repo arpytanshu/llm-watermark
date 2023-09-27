@@ -13,7 +13,7 @@ elapsed = perf_counter() - tick
 print(f"{elapsed=:.4f}")
 
 
-wm_cfg = WaterMarkingConfig(vocab_size=tokenizer.vocab_size,
+wm_cfg = WaterMarkingConfig(vocab_size=tokenizer.vocab_size)
 
 watermarker = WaterMarking(wm_cfg)
 
