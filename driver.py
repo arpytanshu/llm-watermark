@@ -1,59 +1,60 @@
 #%%
+
 import torch
-from time import perf_counter
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from watermark import WaterMarking, WaterMarkingConfig
-from watermark import WaterMarking, WaterMarkingConfig
+from utils import get_model, prepare_llama_prompt
 from copy import deepcopy
+from watermark import (
+    WaterMark, 
+    WaterMarkConfig, 
+    wm_generate
+)
 
 torch.set_default_device('cuda')
-
-MODEL_STRING = 'cerebras/Cerebras-GPT-111M'
-
-tick = perf_counter()
-model = AutoModelForCausalLM.from_pretrained(MODEL_STRING)
-tokenizer = AutoTokenizer.from_pretrained(MODEL_STRING)
-elapsed = perf_counter() - tick
-n_params = model.num_parameters() // 1024 // 1024
-print(f"{elapsed=:.4f} s in loading model w/ {n_params}M parameters.")
-
-
-wm_cfg = WaterMarkingConfig(vocab_size=tokenizer.vocab_size)
-watermarker = WaterMarking(wm_cfg)
+# MODEL_STRING = 'cerebras/Cerebras-GPT-111M'
+# MODEL_STRING = "meta-llama/Llama-2-7b-chat-hf"
+MODEL_STRING = "meta-llama/Llama-2-13b-chat-hf"
+model, tokenizer = get_model(MODEL_STRING)
 
 
 #%%
 
-input_ids = tokenizer("write a 4 line poetry about tensors.", 
-                      return_tensors="pt")['input_ids']
-output = model(input_ids, output_hidden_states=True)
-wm_logits = watermarker(output.logits, input_ids)
+wm_cfg = WaterMarkConfig(vocab_size=tokenizer.vocab_size)
+wm_cfg.soft_mode = True
+wm_cfg.hardness = 1.5
+
+watermarker = WaterMark(wm_cfg)
+prompt = 'write a 4 liner poetry about tensors.'
+prompt = prepare_llama_prompt(prompt)
+
+generation_config = {'max_length':  100, 
+                     'temperature': 0.7, 
+                     'do_sample':   False, 
+                     'model':       model,
+                     'tokenizer':   tokenizer,
+                     'prompt':      prompt
+                     }
+
+# get watermarked generations
+prompt_ids, wm_output_ids = wm_generate(**generation_config, watermarker=watermarker)
+
+# get non-watermarked generations
+prompt_ids, output_ids = wm_generate(**generation_config, watermarker=None, )
+
+prompt = tokenizer.decode(prompt_ids.squeeze(0), skip_special_tokens=True)
+non_wm_gens = tokenizer.decode(output_ids.squeeze(0), skip_special_tokens=True)
+wm_gens = tokenizer.decode(wm_output_ids.squeeze(0), skip_special_tokens=True)
+
+print(prompt)
+print('='*16)
+print()
+print('WaterMarked Generations:')
+print('='*16)
+print(wm_gens)
+print()
+print('non-WaterMarked Generations:')
+print('='*16)
+print(non_wm_gens)
+print()
 
 
 # %%
-
-def wm_generate(model: AutoModelForCausalLM,
-                prompt: str,
-                temperature: float = 0.7,
-                max_length: int = 100,
-): 
-    device = model.device()
-    input_ids = tokenizer.encode(prompt, add_special_tokens=True, return_tensors='pt').to(device)
-    prompt_len = len(input_ids[0])
-
-    for ix in range(max_length):
-        with torch.no_grad():
-
-            out = model(torch.tensor(input_ids).to(torch.int).unsqueeze(0).to(model.device),
-                        output_hidden_states=True,
-                        use_cache=False)
-            
-            wm_logits = watermarker(output.logits, input_ids)
-            probs = torch.softmax(wm_logits.squeeze()/temperature, axis=0)
-            out_token_id = torch.multinomial(probs, 1)[0].item()
-            
-        if out_token_id == tokenizer.eos_token_id:
-            break;e
-        else:
-            input_ids.append(out_token_id)
-

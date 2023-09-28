@@ -38,6 +38,9 @@ $\hat{p}_{k}^{(t)} =
 5. Sample the next token, $s^{(t)}$ , using the water-marked distribution $\hat{p}^{(t)}$.
 
 
+#### sample out
 
-
+ToDo:
+1. create comparison charts portraying effect of hardness param vs number of tokens needed for detection.
+2. create comparison charts portraying number of tokens needed for detection for hard and soft modes.
 

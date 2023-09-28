@@ -1,8 +1,9 @@
 
 import torch
 from typing import Callable
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-class WaterMarkingConfig:
+class WaterMarkConfig:
     def __init__(self, 
                  vocab_size: int, 
                  gamma: float = 0.5, 
@@ -26,9 +27,8 @@ class WaterMarkingConfig:
          hardness={self.hardness}, \
          soft_mode={self.soft_mode})"
     
-
-class WaterMarking:
-   def __init__(self, cfg: WaterMarkingConfig):
+class WaterMark:
+   def __init__(self, cfg: WaterMarkConfig):
       self.cfg = cfg
    
    def _hash_input(self, input_ids):
@@ -55,7 +55,7 @@ class WaterMarking:
    
    def _soft_mode(self, logits, lists):
       index = lists['G_list']
-      src = torch.ones(index.shape) * self.cfg.hardness #
+      src = torch.ones(index.shape, dtype=logits.dtype) * self.cfg.hardness #
       logits.scatter_reduce_(dim=1, index=index, src=src, reduce='sum')
 
    def __call__(self, 
@@ -90,4 +90,51 @@ class WaterMarking:
       else:
          return logits
       
+def wm_generate(model: AutoModelForCausalLM,
+                tokenizer: AutoTokenizer,
+                prompt: str,
+                watermarker: WaterMark,
+                temperature: float = 0.7,
+                do_sample: bool = True,
+                max_length: int = 100):
+   
+   device = model.device
+   input_ids = tokenizer.encode(prompt, 
+                                add_special_tokens=True, 
+                                return_tensors='pt').to(device)
 
+   prompt_len = len(input_ids[0])
+   batch_sz = input_ids.shape[0]
+
+   input_ids.shape[0]
+   for ix in range(max_length):
+      with torch.no_grad():
+         output = model(input_ids.to(model.device), 
+                        output_hidden_states=True, 
+                        use_cache=False)
+         
+         if watermarker is not None:
+            logits = watermarker(output.logits, input_ids) # BxT
+         else:
+            logits = output.logits[:, -1, :] # BxT
+         
+         logits = logits / temperature
+         probs = torch.softmax(logits, axis=1) # BxT
+         
+         if do_sample:
+            out_token_id = torch.multinomial(probs, 1) # Bx1
+         else:
+            # greedy decoding
+            out_token_id = torch.argmax(probs, axis=1).unsqueeze(1)
+
+      input_ids = torch.cat([input_ids, out_token_id], dim=-1)
+      
+      if (batch_sz == 1) & \
+         (out_token_id.item() == tokenizer.eos_token_id):   
+         break;
+  
+   prompt_ids = input_ids[:, :prompt_len]
+   generation_ids = input_ids[:, prompt_len:]
+   return prompt_ids, generation_ids
+   
+#%%
