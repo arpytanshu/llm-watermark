@@ -38,9 +38,15 @@ $\hat{p}_{k}^{(t)} =
 5. Sample the next token, $s^{(t)}$ , using the water-marked distribution $\hat{p}^{(t)}$.
 
 
-#### sample out
+### Detecting Watermarks:
+  
+Null Hypothesis $H_0:$ The text sequence is generated w/ no knowledge if the red list rule.  
+The number of green list tokens, denoted $|s|_G$ has expected value $T/2$ and variance $T/4$.  
+For a One proportion z-test the z-statistic is  :
+$$z = \frac{2(|s|_G - T/2)}{\sqrt{T}}$$
+for an arbitrary $\gamma$, $$z = \frac{(|s|_G - \gamma T)}{\sqrt{T \gamma (1 - \gamma)}}$$
 
-ToDo:
+### ToDo:
 1. create comparison charts portraying effect of hardness param vs number of tokens needed for detection.
 2. create comparison charts portraying number of tokens needed for detection for hard and soft modes.
 

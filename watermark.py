@@ -2,6 +2,8 @@
 import torch
 from typing import Callable
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from math import sqrt
+
 
 class WaterMarkConfig:
     def __init__(self, 
@@ -19,6 +21,9 @@ class WaterMarkConfig:
         # Calculate G and R list sizes
         self.G_list_size = int(self.vocab_size * self.gamma)
         self.R_list_size = self.vocab_size - self.G_list_size
+
+        # detection config
+        self.threshold = 4
 
     def __repr__(self):
         return \
@@ -39,12 +44,20 @@ class WaterMark:
       device = input_ids.device
       g = torch.Generator(device)
       bch_sz = input_ids.shape[0]
-      G_list = torch.empty((bch_sz, self.cfg.G_list_size), dtype=torch.long) #
-      R_list = torch.empty((bch_sz, self.cfg.R_list_size), dtype=torch.long) #
+      G_list = torch.empty((bch_sz, 
+                            self.cfg.G_list_size), 
+                           dtype=torch.long, 
+                           device=device) #
+      R_list = torch.empty((bch_sz, 
+                            self.cfg.R_list_size), 
+                            dtype=torch.long, 
+                            device=device) #
       
       for ix, id in enumerate(input_ids):
          g.manual_seed(self.cfg.hash_fn(id.item()))
-         rand_perm = torch.randperm(n=self.cfg.vocab_size, generator=g) #
+         rand_perm = torch.randperm(n=self.cfg.vocab_size, 
+                                    generator=g, 
+                                    device=device) #
          G_list[ix] = rand_perm[:self.cfg.G_list_size]
          R_list[ix] = rand_perm[self.cfg.G_list_size:]
       
@@ -55,14 +68,15 @@ class WaterMark:
    
    def _soft_mode(self, logits, lists):
       index = lists['G_list']
-      src = torch.ones(index.shape, dtype=logits.dtype) * self.cfg.hardness #
+      src = torch.ones(index.shape, 
+                       dtype=logits.dtype, 
+                       device=logits.device) * self.cfg.hardness #
       logits.scatter_reduce_(dim=1, index=index, src=src, reduce='sum')
 
    def __call__(self, 
                 logits: torch.FloatTensor,
-                input_ids: torch.LongTensor, 
-                return_lists:bool = False):
-      
+                input_ids: torch.LongTensor):
+            
       assert logits.dim() == 3, \
          f"Expected logits to have dimension 3, \
             but got dimension {logits.dim()}"
@@ -85,12 +99,9 @@ class WaterMark:
       else:
          self._hard_mode(logits, lists)
 
-      if return_lists:
-         return logits, lists
-      else:
-         return logits
+      return logits
       
-def wm_generate(model: AutoModelForCausalLM,
+def wmGenerate(model: AutoModelForCausalLM,
                 tokenizer: AutoTokenizer,
                 prompt: str,
                 watermarker: WaterMark,
@@ -137,4 +148,57 @@ def wm_generate(model: AutoModelForCausalLM,
    generation_ids = input_ids[:, prompt_len:]
    return prompt_ids, generation_ids
    
-#%%
+
+class WaterMarkDetector:
+    def __init__(self, cfg: WaterMarkConfig):
+        self.cfg = cfg
+        self.generator = torch.Generator(torch.device('cpu'))
+
+    def _id_in_green(self, curr_id:int, seed_id:int, ):
+        self.generator.manual_seed(self.cfg.hash_fn(seed_id))
+        rand_perm = torch.randperm(n=self.cfg.vocab_size, generator=self.generator)
+        # check if curr_id exist in the generated green list
+        return (rand_perm[:self.cfg.G_list_size] == curr_id).sum() > 0
+
+    @staticmethod
+    def z_statistic(s_G, T, gamma):
+        num = s_G - (gamma * T)
+        den = sqrt(T * gamma * (1-gamma))
+        return num / den
+
+    def detect(self, prompt: str, generation:str, tokenizer: AutoTokenizer):
+        '''
+        if z_stat < 4:
+        then generated sequence has no knowledge of the red list rule.
+        i.e. the sequence is either not watermarked, or equivalently human generated.
+        AND cannot reject null huypothesis.
+        detect method returns result:False 
+
+        if z_stat > 4:
+        REJECT numm hypothesis
+        the generated sequence has knowledge of the red list rule.
+        i.e. the sequence is watermarked
+        detect method returns result:True 
+        '''
+        prompt_ids = tokenizer.encode(prompt)
+        gen_id = tokenizer.encode(generation, add_special_tokens=False)
+
+        num_gen_tokens = len(gen_id)
+        detection_stats = []
+        
+        prev_id = prompt_ids[-1]
+        s_G = 0 # maintain count of tokens generated from Green list
+        for ix in range(num_gen_tokens):
+            T = ix + 1 # length of sequence till this index
+            curr_id = gen_id[ix]
+            
+            if self._id_in_green(curr_id, prev_id):
+               s_G += 1
+
+            z_stat = self.z_statistic(s_G, T, self.cfg.gamma)
+            result = z_stat > self.cfg.threshold
+            detection_stats.append({'index': ix, 'z_stat': z_stat, 's_g': s_G, 'T':T, 'result':result})
+
+            prev_id = curr_id
+        
+        return detection_stats
