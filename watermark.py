@@ -102,12 +102,12 @@ class WaterMark:
       return logits
       
 def wmGenerate(model: AutoModelForCausalLM,
-                tokenizer: AutoTokenizer,
-                prompt: str,
-                watermarker: WaterMark,
-                temperature: float = 0.7,
-                do_sample: bool = True,
-                max_length: int = 100):
+               tokenizer: AutoTokenizer,
+               prompt: str,
+               watermarker: WaterMark,
+               temperature: float = 0.7,
+               do_sample: bool = True,
+               max_length: int = 100):
    
    device = model.device
    input_ids = tokenizer.encode(prompt, 
@@ -124,19 +124,19 @@ def wmGenerate(model: AutoModelForCausalLM,
                         output_hidden_states=True, 
                         use_cache=False)
          
-         if watermarker is not None:
-            logits = watermarker(output.logits, input_ids) # BxT
-         else:
-            logits = output.logits[:, -1, :] # BxT
-         
-         logits = logits / temperature
-         probs = torch.softmax(logits, axis=1) # BxT
-         
-         if do_sample:
-            out_token_id = torch.multinomial(probs, 1) # Bx1
-         else:
-            # greedy decoding
-            out_token_id = torch.argmax(probs, axis=1).unsqueeze(1)
+      if watermarker is not None:
+         logits = watermarker(output.logits, input_ids) # BxT
+      else:
+         logits = output.logits[:, -1, :] # BxT
+      
+      logits = logits / temperature
+      probs = torch.softmax(logits, axis=1) # BxT
+      
+      if do_sample:
+         out_token_id = torch.multinomial(probs, 1) # Bx1
+      else:
+         # greedy decoding
+         out_token_id = torch.argmax(probs, axis=1).unsqueeze(1)
 
       input_ids = torch.cat([input_ids, out_token_id], dim=-1)
       
@@ -151,54 +151,56 @@ def wmGenerate(model: AutoModelForCausalLM,
 
 class WaterMarkDetector:
     def __init__(self, cfg: WaterMarkConfig):
-        self.cfg = cfg
-        self.generator = torch.Generator(torch.device('cpu'))
+         self.cfg = cfg
+         self.generator = torch.Generator(torch.device('cpu'))
 
-    def _id_in_green(self, curr_id:int, seed_id:int, ):
-        self.generator.manual_seed(self.cfg.hash_fn(seed_id))
-        rand_perm = torch.randperm(n=self.cfg.vocab_size, generator=self.generator)
-        # check if curr_id exist in the generated green list
-        return (rand_perm[:self.cfg.G_list_size] == curr_id).sum() > 0
+    def _idInGreen(self, curr_id:int, seed_id:int, ):
+         self.generator.manual_seed(self.cfg.hash_fn(seed_id))
+         rand_perm = torch.randperm(n=self.cfg.vocab_size, generator=self.generator)
+         # check if curr_id exist in the generated green list
+         return (rand_perm[:self.cfg.G_list_size] == curr_id).sum() > 0
 
     @staticmethod
-    def z_statistic(s_G, T, gamma):
-        num = s_G - (gamma * T)
-        den = sqrt(T * gamma * (1-gamma))
-        return num / den
+    def _zStatistic(s_G, T, gamma):
+         num = s_G - (gamma * T)
+         den = sqrt(T * gamma * (1-gamma))
+         return num / den
 
     def detect(self, prompt: str, generation:str, tokenizer: AutoTokenizer):
-        '''
-        if z_stat < 4:
-        then generated sequence has no knowledge of the red list rule.
-        i.e. the sequence is either not watermarked, or equivalently human generated.
-        AND cannot reject null huypothesis.
-        detect method returns result:False 
+         '''
+         H0: the sequence has no knowledge of the red list rule.
 
-        if z_stat > 4:
-        REJECT numm hypothesis
-        the generated sequence has knowledge of the red list rule.
-        i.e. the sequence is watermarked
-        detect method returns result:True 
-        '''
-        prompt_ids = tokenizer.encode(prompt)
-        gen_id = tokenizer.encode(generation, add_special_tokens=False)
+         if z_stat < 4:
+         then generated sequence has no knowledge of the red list rule.
+         i.e. the sequence is either not watermarked, or equivalently human generated.
+         AND cannot reject null huypothesis.
+         detect method returns result:False 
 
-        num_gen_tokens = len(gen_id)
-        detection_stats = []
-        
-        prev_id = prompt_ids[-1]
-        s_G = 0 # maintain count of tokens generated from Green list
-        for ix in range(num_gen_tokens):
+         if z_stat > 4:
+         REJECT numm hypothesis
+         the generated sequence has knowledge of the red list rule.
+         i.e. the sequence is watermarked
+         detect method returns result:True 
+         '''
+         prompt_ids = tokenizer.encode(prompt)
+         gen_id = tokenizer.encode(generation, add_special_tokens=False)
+
+         num_gen_tokens = len(gen_id)
+         detection_stats = []
+         
+         prev_id = prompt_ids[-1]
+         s_G = 0 # maintain count of tokens generated from Green list
+         for ix in range(num_gen_tokens):
             T = ix + 1 # length of sequence till this index
             curr_id = gen_id[ix]
             
-            if self._id_in_green(curr_id, prev_id):
+            if self._idInGreen(curr_id, prev_id):
                s_G += 1
 
-            z_stat = self.z_statistic(s_G, T, self.cfg.gamma)
+            z_stat = self._zStatistic(s_G, T, self.cfg.gamma)
             result = z_stat > self.cfg.threshold
             detection_stats.append({'index': ix, 'z_stat': z_stat, 's_g': s_G, 'T':T, 'result':result})
 
             prev_id = curr_id
-        
-        return detection_stats
+         
+         return detection_stats
