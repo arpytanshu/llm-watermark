@@ -18,32 +18,33 @@ class WaterMarkConfig:
         self.soft_mode = soft_mode
         self.hash_fn = hash_fn
 
-        # Calculate G and R list sizes
+        # G and R list sizes
         self.G_list_size = int(self.vocab_size * self.gamma)
         self.R_list_size = self.vocab_size - self.G_list_size
 
         # detection config
         self.threshold = 4
+        self.detection_device = None
 
     def __repr__(self):
         return \
-         f"WaterMarkingConfig(vocab_size={self.vocab_size}, \
-         gamma={self.gamma}, \
-         hardness={self.hardness}, \
-         soft_mode={self.soft_mode})"
+         f"""WaterMarkingConfig(vocab_size={self.vocab_size},
+            mode={'soft' if self.soft_mode else 'hard'},
+            gList={self.G_list_size},
+            rList={self.R_list_size}"""
     
 class WaterMark:
    def __init__(self, cfg: WaterMarkConfig):
       self.cfg = cfg
    
-   def _hash_input(self, input_ids):
+   def _hash_input(self, input_id):
       '''
-      input_ids: expected_shape is Bx1
+      input_id: expected_shape is Bx1
       step 3 of Algorithm 2, which creates R list & G list.
       '''
-      device = input_ids.device
+      device = input_id.device
       g = torch.Generator(device)
-      bch_sz = input_ids.shape[0]
+      bch_sz = input_id.shape[0]
       G_list = torch.empty((bch_sz, 
                             self.cfg.G_list_size), 
                            dtype=torch.long, 
@@ -53,7 +54,7 @@ class WaterMark:
                             dtype=torch.long, 
                             device=device) #
       
-      for ix, id in enumerate(input_ids):
+      for ix, id in enumerate(input_id):
          g.manual_seed(self.cfg.hash_fn(id.item()))
          rand_perm = torch.randperm(n=self.cfg.vocab_size, 
                                     generator=g, 
@@ -148,15 +149,23 @@ def wmGenerate(model: AutoModelForCausalLM,
    generation_ids = input_ids[:, prompt_len:]
    return prompt_ids, generation_ids
    
-
 class WaterMarkDetector:
     def __init__(self, cfg: WaterMarkConfig):
+
+         assert cfg.detection_device is not None, \
+            "Expected WatermarkConfig.detection_device to be set."
+         assert isinstance(cfg.detection_device, str) or \
+            isinstance(cfg.detection_device, torch.device), \
+            "Expected detection_device to be of type torch.device or string."
+         
          self.cfg = cfg
-         self.generator = torch.Generator(torch.device('cpu'))
+         self.generator = torch.Generator(self.cfg.detection_device)
 
     def _idInGreen(self, curr_id:int, seed_id:int, ):
          self.generator.manual_seed(self.cfg.hash_fn(seed_id))
-         rand_perm = torch.randperm(n=self.cfg.vocab_size, generator=self.generator)
+         rand_perm = torch.randperm(n=self.cfg.vocab_size, 
+                                    generator=self.generator,
+                                    device=self.cfg.detection_device)
          # check if curr_id exist in the generated green list
          return (rand_perm[:self.cfg.G_list_size] == curr_id).sum() > 0
 
@@ -172,7 +181,7 @@ class WaterMarkDetector:
 
          if z_stat < 4:
          then generated sequence has no knowledge of the red list rule.
-         i.e. the sequence is either not watermarked, or equivalently human generated.
+         i.e. the sequence is either not watermarked, or human generated.
          AND cannot reject null huypothesis.
          detect method returns result:False 
 
@@ -199,7 +208,12 @@ class WaterMarkDetector:
 
             z_stat = self._zStatistic(s_G, T, self.cfg.gamma)
             result = z_stat > self.cfg.threshold
-            detection_stats.append({'index': ix, 'z_stat': z_stat, 's_g': s_G, 'T':T, 'result':result})
+            detection_stats.append({'index': ix, 
+                                    'z_stat': z_stat, 
+                                    's_g': s_G, 
+                                    'T':T, 
+                                    'result':result,
+                                    'token_id':curr_id})
 
             prev_id = curr_id
          

@@ -1,7 +1,7 @@
 #%%
 
 import torch
-from utils import get_model, prepare_llama_prompt
+from utils import get_model, prepare_llama_prompt, plot_stats
 from copy import deepcopy
 from watermark import (
     WaterMark, 
@@ -10,26 +10,30 @@ from watermark import (
     wmGenerate
 )
 
-# torch.('cuda')
-# MODEL_STRING = 'cerebras/Cerebras-GPT-111M'
+MODEL_STRING = 'cerebras/Cerebras-GPT-111M'
 # MODEL_STRING = "meta-llama/Llama-2-7b-chat-hf"
-MODEL_STRING = "meta-llama/Llama-2-13b-chat-hf"
-model, tokenizer = get_model(MODEL_STRING)
+# MODEL_STRING = "meta-llama/Llama-2-13b-chat-hf"
+DEVICE = torch.device('cuda:0')
+
+model, tokenizer = get_model(MODEL_STRING, load_in_8bit=False)
+model.to(DEVICE)
 
 #%%
 
 wm_cfg = WaterMarkConfig(vocab_size=tokenizer.vocab_size)
-wm_cfg.soft_mode = False
-wm_cfg.hardness = 2.5
+wm_cfg.soft_mode = True # hard_mode
+wm_cfg.hardness = 2.0
+wm_cfg.detection_device = model.device
 
 watermarker = WaterMark(wm_cfg)
 wm_detector = WaterMarkDetector(wm_cfg)
 
-prompt = 'write a 8 liner poetry about tensors.'
+
+prompt = 'write a 3 liner poetry about tensors.'
 prompt = prepare_llama_prompt(prompt)
 
 generation_config = {
-    'max_length':  200, 
+    'max_length':  100, 
     'temperature': 0.7, 
     'do_sample': False}
 
@@ -65,17 +69,53 @@ print('='*16)
 print(non_wm_gens)
 print()
 
+stats1 = wm_detector.detect(prompt, wm_gens, tokenizer)
+stats2 = wm_detector.detect(prompt, non_wm_gens, tokenizer)
 
+
+#%%
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+fig, ax = plt.subplots(1,1, figsize=(10,5))
+plot_stats(stats1, ax, 'watermarked generations')
+plot_stats(stats2, ax, 'non watermarked generations')
 
 
 # %%
 
 
-stats1 = wm_detector.detect(prompt, wm_gens, tokenizer)
-stats1
+import matplotlib.pyplot as plt
 
 
-#%%
-stats2 = wm_detector.detect(prompt, non_wm_gens, tokenizer)
-stats2
- # %%
+fig = plt.figure()
+ax = fig.add_subplot()
+fig.subplots_adjust(top=0.85)
+
+# Set titles for the figure and the subplot respectively
+fig.suptitle('suptitle', fontsize=14, fontweight='bold')
+ax.set_title('axes title')
+
+ax.set_xticks([])
+ax.set_yticks([])
+
+
+# ax.text(.3, .8, 'boxed italics text in data coords', style='italic',
+#         bbox={'facecolor': 'red', 'alpha': 0.5, 'pad': 10})
+
+ax.text(0, 1, 'Prompt Text.',
+        verticalalignment='top', horizontalalignment='left',
+        transform=ax.transAxes,
+        color='green', fontsize=15)
+
+ax.spines['bottom'].set_visible(False)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.spines['left'].set_visible(False)
+
+
+plt.show()
+
+
+# %%
