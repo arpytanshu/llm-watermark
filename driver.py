@@ -16,7 +16,7 @@ from watermark import (
 )
 
 def run(
-    user_prompt: str = "Write a 8-liner poetry about PCIe.",
+    user_prompt: str,
     model_string: str = "meta-llama/Llama-2-7b-chat-hf",
     device: torch.device = torch.device('cuda'),
     watermark: bool = True,         # [True, False]
@@ -24,7 +24,7 @@ def run(
     hardness: int = 4.0,
     max_length: int = 300,
     do_sample: bool = True,
-    temperature: float = 0.7,
+    temperature: float = 0.1,
     save_gif: bool = True,
     gif_dest_path: Union[Path, str] = Path('/tmp')
 ):
@@ -127,7 +127,8 @@ def run(
         create_gif(stats=detection_stats, 
                    user_prompt=user_prompt,
                    tokenizer=tokenizer, 
-                   dest_path=gif_dest_path)
+                   dest_path=gif_dest_path,
+                   title=file_name[:-4])
         print(f'GIF saved at {gif_dest_path=}')
 
 

@@ -81,7 +81,8 @@ def get_model(model_string:str, load_in_8bit: bool = True):
 def create_gif(stats: List[Dict],
                user_prompt: str, 
                tokenizer: AutoTokenizer, 
-               dest_path: Union[str, Path]):
+               dest_path: Union[str, Path],
+               title: str = ''):
     def _format(ax):
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
@@ -115,6 +116,8 @@ def create_gif(stats: List[Dict],
         string = [[y for y in x.split()] for x in string.split('\n')]
 
         fig, axs = plt.subplots(1, 2, figsize=(8,3), gridspec_kw={'width_ratios': [2, 1]})
+        fig.suptitle(title)
+
         _format(axs[0])
 
         for line_ix, line in enumerate(string):
