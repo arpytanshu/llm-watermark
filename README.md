@@ -3,7 +3,7 @@ Minimal Implementation of  [``A watermark for Large Language Models``](https://a
 
 
 
-### Algorithm 2: Text Generation with Soft Red List
+#### Details of Algorithm 2: Text Generation with Soft Red List 
 
 Input:
 - $s^{(−Np)} \ldots s^{-1}$ prompt of length $N_p$
@@ -38,7 +38,7 @@ $\hat{p}_{k}^{(t)} =
 5. Sample the next token, $s^{(t)}$ , using the water-marked distribution $\hat{p}^{(t)}$.
 
 
-### Detecting Watermarks:
+#### Detecting Watermarks:
   
 Null Hypothesis $H_0:$ The text sequence is generated w/ no knowledge if the red list rule.  
 The number of green list tokens, denoted $|s|_G$ has expected value $T/2$ and variance $T/4$.  
@@ -46,7 +46,66 @@ For a One proportion z-test the z-statistic is  :
 $$z = \frac{2(|s|_G - T/2)}{\sqrt{T}}$$
 for an arbitrary $\gamma$, $$z = \frac{(|s|_G - \gamma T)}{\sqrt{T \gamma (1 - \gamma)}}$$
 
-### ToDo:
-1. create comparison charts portraying effect of hardness param vs number of tokens needed for detection.
-2. create comparison charts portraying number of tokens needed for detection for hard and soft modes.
+
+### Usage:
+```
+# Generate without watermark
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark False --gif_dest_path temp/
+
+# Generate with Hard Red List watermarking rule.
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode hard --gif_dest_path temp/
+
+# Generate with Soft Red List watermarking rule, and low hardness.
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode soft --hardness 2.0 --gif_dest_path temp/
+
+#Generate with Soft Red List watermarking rule, and higher hardness.
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode soft --hardness 4.0 --gif_dest_path temp/
+```
+
+
+### Module Usage:
+
+```
+from watermark import WaterMark, WaterMarkConfig, WaterMarkDetector, wmGenerate
+
+model = ...       # some huggingface language model
+tokenizer = ...   # huggingface tokenizer
+
+wm_cfg = WaterMarkConfig(vocab_size=tokenizer.vocab_size, device=model.device)
+```
+set hard red list or soft red list 
+```
+wm_cfg.soft_mode = True         # False for hard red list
+
+watermarker = WaterMark(wm_cfg)
+wm_detector = WaterMarkDetector(wm_cfg)
+
+user_prompt = 'write a 8 liner poetry about tensors.'
+
+prompt_ids, wm_output_ids = wmGenerate(
+        model=model, 
+        tokenizer=tokenizer, 
+        prompt=prompt, 
+        watermarker=watermarker, 
+        max_length = 250,
+        temperature = 0.7,
+        do_sample = True)
+
+prompt = tokenizer.decode(prompt_ids.squeeze(0), skip_special_tokens=True)
+non_wm_gens = tokenizer.decode(output_ids.squeeze(0), skip_special_tokens=True)
+```
+
+detection
+```
+stats = wm_detector.detect(prompt, wm_gens, tokenizer)
+```
+
+
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark False --gif_dest_path temp/
+
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode hard --gif_dest_path temp/
+
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode soft --hardness 2.0 --gif_dest_path temp/
+
+python driver.py --user_prompt "Write a 8-liner poetry about PCIe." --watermark True --watermark_mode soft --hardness 4.0 --gif_dest_path temp/
 

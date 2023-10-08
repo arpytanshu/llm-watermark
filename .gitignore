@@ -171,3 +171,4 @@ dmypy.json
 
 resources/
 .vscode/
+temp/
