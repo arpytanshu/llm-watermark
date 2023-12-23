@@ -38,20 +38,15 @@ Watermark Detection working on `watermarked text (1st Illustration)` vs `non-wat
     a **red list** $R$ of size $(1−\gamma)|V|$
     4. Add $\delta$ to each green list logit.   
     Apply the softmax operator to these modified logits to get a probability distribution over the vocabulary.
-$\hat{p}^{(t)}\_k = \left\(\frac
+    $$\hat{p}^{(t)}\_k = \left\(\frac
        { \exp ( l_k^{(t)}  + \delta)}
        { \sum_{i \in R} \exp( l_i^{(t)} ) + \sum_{i\in G} \exp ( l_i^{(t)} + \delta ) }, k \in G ;
        \frac
        { \exp ( l_k^{(t)})}
-       { \sum_{i \in R} \exp( l_i^{(t)} ) + \sum_{i\in G} \exp ( l_i^{(t)} + \delta ) }, k \in R \right)$
+       { \sum_{i \in R} \exp( l_i^{(t)} ) + \sum_{i\in G} \exp ( l_i^{(t)} + \delta ) }, k \in R \right)$$
     5. Sample the next token, $s^{(t)}$ , using the water-marked distribution $\hat{p}^{(t)}$.
-    
-          
-        
-       
 
-```
-
+---    
 
 ##### Detecting Watermarks:
 - Null Hypothesis $H_0:$ The text sequence is generated w/ no knowledge if the red list rule.  
@@ -59,8 +54,8 @@ $\hat{p}^{(t)}\_k = \left\(\frac
 - For a One proportion z-test the z-statistic is  :
 $z = \frac{2(|s|_G - T/2)}{\sqrt{T}}$  
 - for an arbitrary $\gamma$, $z = \frac{(|s|_G - \gamma T)}{\sqrt{T \gamma (1 - \gamma)}}$
-
 ---
+
 
 ### Script Usage:
 ```
